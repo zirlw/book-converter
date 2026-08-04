@@ -9,6 +9,7 @@ import fitz
 from PIL import Image
 
 from .models import Document, ImageBlock, PageContent, TextBlock
+from .text_cleanup import remove_recurring_marginalia
 
 
 class DirectExtractor:
@@ -23,11 +24,15 @@ class DirectExtractor:
 
         print()
         pdf.close()
+        removed = remove_recurring_marginalia(document)
+        if removed:
+            print(f'  Removed {removed} recurring header/footer/page-number block(s).')
         return document
 
     @staticmethod
     def _process_page(page: fitz.Page, page_num: int, doc: Document) -> PageContent:
         content = PageContent(page_num=page_num)
+        page_height = max(1.0, page.rect.height)
 
         # get_text("blocks") → (x0,y0,x1,y1, text, block_no, block_type)
         # block_type: 0 = text, 1 = image
@@ -36,7 +41,11 @@ class DirectExtractor:
             if btype == 0:
                 text = block[4].strip()
                 if text:
-                    content.blocks.append(TextBlock(text=text))
+                    content.blocks.append(TextBlock(
+                        text=text,
+                        top_ratio=block[1] / page_height,
+                        bottom_ratio=block[3] / page_height,
+                    ))
             elif btype == 1:
                 # Extract the embedded image
                 clip = fitz.Rect(block[:4])

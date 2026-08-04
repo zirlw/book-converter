@@ -7,6 +7,8 @@ class TextBlock:
     text: str
     is_heading: bool = False
     heading_level: int = 1  # 1 = chapter-level, 2 = section-level
+    top_ratio: Optional[float] = None
+    bottom_ratio: Optional[float] = None
 
 
 @dataclass

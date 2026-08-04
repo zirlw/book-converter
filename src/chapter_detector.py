@@ -12,8 +12,10 @@ from .models import Chapter
 # Patterns matched against the *start* of a stripped line
 _PATTERNS = [
     re.compile(r'^(?:CHAPTER|Chapter|chapter)\s+(?:\d+|[IVXLCDM]+|[A-Z][a-z]+)\b'),
+    re.compile(r'^(?:CHAPTER|Chapter|chapter)\b[\s\.:\-]*$'),
     re.compile(r'^(?:PART|Part|part)\s+(?:\d+|[IVXLCDM]+|[A-Z][a-z]+)\b'),
     re.compile(r'^[IVXLCDM]{1,6}\.\s'),  # e.g. "IV. The Storm"
+    re.compile(r'^(?:BOOK|Book|book)\s+(?:\d+|[IVXLCDM]+|[A-Z][a-z]+)\b'),
 ]
 
 
@@ -29,7 +31,7 @@ class ChapterDetector:
                 continue
 
             lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
-            heading = _find_heading(lines[:8])  # only look near the top of the page
+            heading = _find_heading(lines[:12])  # only look near the top of the page
             if heading:
                 chapter_num += 1
                 chapters.append(Chapter(
@@ -47,9 +49,13 @@ class ChapterDetector:
 # ------------------------------------------------------------------
 
 def _find_heading(lines: List[str]) -> str:
-    for line in lines:
+    for i, line in enumerate(lines):
         for pat in _PATTERNS:
             if pat.match(line):
+                if re.match(r'^(?:CHAPTER|Chapter|chapter)\b[\s\.:\-]*$', line) and i + 1 < len(lines):
+                    nxt = lines[i + 1]
+                    if 0 < len(nxt) < 90 and not any(p.match(nxt) for p in _PATTERNS):
+                        return f'{line} {nxt}'.strip()
                 return line
     return ''
 

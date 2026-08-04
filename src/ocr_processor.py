@@ -13,6 +13,7 @@ from PIL import Image
 from pytesseract import Output
 
 from .models import Document, ImageBlock, PageContent, TextBlock
+from .text_cleanup import remove_recurring_marginalia
 
 
 class OCRProcessor:
@@ -51,6 +52,9 @@ class OCRProcessor:
 
         print()
         pdf.close()
+        removed = remove_recurring_marginalia(document)
+        if removed:
+            print(f'  Removed {removed} recurring header/footer/page-number block(s).')
         return document
 
     # ------------------------------------------------------------------
@@ -130,7 +134,12 @@ class OCRProcessor:
             text = _join_hyphenated('\n'.join(line_texts))
 
             avg_h = float(np.mean(para['heights']))
-            page.blocks.append(TextBlock(text=text, is_heading=avg_h > median_h * self._HEADING_RATIO))
+            page.blocks.append(TextBlock(
+                text=text,
+                is_heading=avg_h > median_h * self._HEADING_RATIO,
+                top_ratio=top / h,
+                bottom_ratio=bottom / h,
+            ))
             last_bottom = bottom
 
         # Check trailing gap

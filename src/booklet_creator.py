@@ -30,8 +30,8 @@ class BookletCreator:
         src.close()
 
         if not chapters:
-            print('  No chapters found — splitting by page count.')
-            return self._fallback_split(pdf_path, total_pages, output_dir)
+            print('  No chapters found — creating one booklet to avoid mid-chapter splits.')
+            return self._single_booklet_without_chapters(pdf_path, total_pages, output_dir)
 
         ranges = _chapter_ranges(chapters, total_pages)
         groups = self._group_into_booklets(ranges)
@@ -116,6 +116,20 @@ class BookletCreator:
                                  fontsize=11, fontname='tiit',
                                  color=(0.75, 0.75, 0.75), align=1)
 
+            chapter_lines = _chapter_lines_for_cover(group)
+            chapter_text = 'Included Chapters\n\n' + '\n'.join(chapter_lines)
+            for size in (11, 10, 9, 8):
+                spare = page.insert_textbox(
+                    fitz.Rect(84, 560, 528, 742),
+                    chapter_text,
+                    fontsize=size,
+                    fontname='tiro',
+                    color=(0.93, 0.93, 0.93),
+                    align=0,
+                )
+                if spare >= 0:
+                    break
+
     # -- TOC page(s) -------------------------------------------------------
 
     def _draw_toc(self, doc: fitz.Document, num: int, group: List[dict]) -> int:
@@ -166,21 +180,29 @@ class BookletCreator:
 
     # -- Fallback (no chapters) --------------------------------------------
 
-    def _fallback_split(self, pdf_path: str, total: int, out_dir: str) -> List[str]:
+    def _single_booklet_without_chapters(self, pdf_path: str, total: int, out_dir: str) -> List[str]:
         src = fitz.open(pdf_path)
-        paths: List[str] = []
-        n = 1
-        for start in range(0, total, self.max_pages):
-            end = min(start + self.max_pages - 1, total - 1)
-            out = fitz.open()
-            out.insert_pdf(src, from_page=start, to_page=end)
-            out_path = str(Path(out_dir) / f'booklet_{n:02d}.pdf')
-            out.save(out_path)
-            out.close()
-            paths.append(out_path)
-            n += 1
+        out = fitz.open()
+        pseudo_group = [{
+            'chapter': Chapter(title='Entire Book (chapter detection unavailable)', page_num=1),
+            'start': 1,
+            'end': total,
+            'count': total,
+        }]
+
+        self._draw_cover(out, 1, pseudo_group)
+        toc_page_count = self._draw_toc(out, 1, pseudo_group)
+        out.insert_pdf(src, from_page=0, to_page=total - 1)
+
+        front_matter = 1 + toc_page_count
+        for i in range(front_matter, len(out)):
+            _stamp_page_number(out[i], i - front_matter + 1)
+
+        out_path = str(Path(out_dir) / 'booklet_01.pdf')
+        out.save(out_path)
+        out.close()
         src.close()
-        return paths
+        return [out_path]
 
 
 # ------------------------------------------------------------------
@@ -216,6 +238,22 @@ def _stamp_page_number(page: fitz.Page, number: int) -> None:
         color=(0.4, 0.4, 0.4),
         align=1,
     )
+
+
+def _chapter_lines_for_cover(group: List[dict]) -> List[str]:
+    lines: List[str] = []
+    for idx, item in enumerate(group, 1):
+        title = item['chapter'].title.strip() or f'Chapter {idx}'
+        if len(title) > 72:
+            title = title[:69] + '\u2026'
+        lines.append(f'{idx}. {title}')
+
+    max_visible = 18
+    if len(lines) > max_visible:
+        hidden = len(lines) - max_visible
+        lines = lines[:max_visible]
+        lines.append(f'... and {hidden} more chapter(s)')
+    return lines
 
 
 def _fit_fontsize(text: str, max_w: int, max_h: int, start: int = 36, minimum: int = 12) -> int:
